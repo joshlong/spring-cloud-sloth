@@ -23,6 +23,11 @@ import java.io.PrintWriter;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * I'M NOT SORRY
+ *
+ * @author Josh Long
+ */
 @Configuration
 @ConditionalOnWebApplication
 public class SlothAutoConfiguration {
@@ -38,6 +43,11 @@ public class SlothAutoConfiguration {
     }
 }
 
+/**
+ * Returns a JSON feed for the JavaScript client. The feed simply enumerates
+ * all the images in the {@code images} directory. We could in theory generate this feed
+ * from a Google image search result..
+ */
 @RestController
 class ImageRestController {
 
@@ -63,16 +73,15 @@ class ImageRestController {
 }
 
 /**
- * injects a script,
+ * injects a script, {@code sloths.js}, which in turn loads a slew of
+ * other JavaScript and CSS to create a carousel of the images
+ * available from the {@link ImageRestController} REST endpoint above.
  */
-
 class SlothFilter implements Filter {
-
 
     @Override
     public void init(FilterConfig filterConfig) throws ServletException {
     }
-
 
     @Override
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain)
@@ -83,20 +92,14 @@ class SlothFilter implements Filter {
         filterChain.doFilter(servletRequest, capturingResponseWrapper);
 
         if (servletResponse.getContentType() != null && servletResponse.getContentType().contains("text/html")) {
-
             String content = capturingResponseWrapper.getCaptureAsString();
-
             String sleepyScript = String.format("<script src=\"%s\"></script>", servletRequest.getServletContext().getContextPath() + "/sloths.js");
-
             String closeBodyTag = "</body>";
-
             int bodyStart = content.toLowerCase().lastIndexOf(closeBodyTag);
-
             String newHtml = content.substring(0, bodyStart)
                     + sleepyScript
                     + "</body>"
                     + content.substring(bodyStart + closeBodyTag.length());
-
 
             servletResponse.setContentLength(newHtml.length());
             servletResponse.getWriter().write(newHtml);
@@ -109,100 +112,98 @@ class SlothFilter implements Filter {
     @Override
     public void destroy() {
     }
+}
 
+/**
+ * This code was <a href="http://www.leveluplunch.com/java/tutorials/034-modify-html-response-using-filter/">
+ * taken from this very helpful blog post which also happens to use Spring Boot!</a>
+ */
+class HtmlResponseWrapper extends HttpServletResponseWrapper {
 
-    /**
-     * This code was <a href="http://www.leveluplunch.com/java/tutorials/034-modify-html-response-using-filter/">
-     * taken from this very helpful blog post which also happens to use Spring Boot!</a>
-     */
-    static class HtmlResponseWrapper extends HttpServletResponseWrapper {
+    private final ByteArrayOutputStream capture;
+    private ServletOutputStream output;
+    private PrintWriter writer;
 
-        private final ByteArrayOutputStream capture;
-        private ServletOutputStream output;
-        private PrintWriter writer;
+    public HtmlResponseWrapper(HttpServletResponse response) {
+        super(response);
+        capture = new ByteArrayOutputStream(response.getBufferSize());
+    }
 
-        public HtmlResponseWrapper(HttpServletResponse response) {
-            super(response);
-            capture = new ByteArrayOutputStream(response.getBufferSize());
+    @Override
+    public ServletOutputStream getOutputStream() {
+        if (writer != null) {
+            throw new IllegalStateException(
+                    "getWriter() has already been called on this response.");
         }
 
-        @Override
-        public ServletOutputStream getOutputStream() {
-            if (writer != null) {
-                throw new IllegalStateException(
-                        "getWriter() has already been called on this response.");
-            }
+        if (output == null) {
+            output = new ServletOutputStream() {
+                @Override
+                public void write(int b) throws IOException {
+                    capture.write(b);
+                }
 
-            if (output == null) {
-                output = new ServletOutputStream() {
-                    @Override
-                    public void write(int b) throws IOException {
-                        capture.write(b);
-                    }
+                @Override
+                public void flush() throws IOException {
+                    capture.flush();
+                }
 
-                    @Override
-                    public void flush() throws IOException {
-                        capture.flush();
-                    }
+                @Override
+                public void close() throws IOException {
+                    capture.close();
+                }
 
-                    @Override
-                    public void close() throws IOException {
-                        capture.close();
-                    }
+                @Override
+                public boolean isReady() {
+                    return false;
+                }
 
-                    @Override
-                    public boolean isReady() {
-                        return false;
-                    }
-
-                    @Override
-                    public void setWriteListener(WriteListener arg0) {
-                    }
-                };
-            }
-
-            return output;
+                @Override
+                public void setWriteListener(WriteListener arg0) {
+                }
+            };
         }
 
-        @Override
-        public PrintWriter getWriter() throws IOException {
-            if (this.output != null) {
-                throw new IllegalStateException(
-                        "getOutputStream() has already been called on this response.");
-            }
+        return output;
+    }
 
-            if (this.writer == null) {
-                OutputStreamWriter out = new OutputStreamWriter(this.capture, getCharacterEncoding());
-                this.writer = new PrintWriter(out);
-            }
-
-            return this.writer;
+    @Override
+    public PrintWriter getWriter() throws IOException {
+        if (this.output != null) {
+            throw new IllegalStateException(
+                    "getOutputStream() has already been called on this response.");
         }
 
-        @Override
-        public void flushBuffer() throws IOException {
-            super.flushBuffer();
-
-            if (this.writer != null) {
-                this.writer.flush();
-            } else if (this.output != null) {
-                this.output.flush();
-            }
+        if (this.writer == null) {
+            OutputStreamWriter out = new OutputStreamWriter(this.capture, getCharacterEncoding());
+            this.writer = new PrintWriter(out);
         }
 
-        public byte[] getCaptureAsBytes() throws IOException {
-            if (this.writer != null) {
-                this.writer.close();
-            } else if (this.output != null) {
-                this.output.close();
-            }
-            return this.capture.toByteArray();
-        }
+        return this.writer;
+    }
 
-        public String getCaptureAsString() throws IOException {
-            return new String(getCaptureAsBytes(), getCharacterEncoding());
-        }
+    @Override
+    public void flushBuffer() throws IOException {
+        super.flushBuffer();
 
+        if (this.writer != null) {
+            this.writer.flush();
+        } else if (this.output != null) {
+            this.output.flush();
+        }
+    }
+
+    public byte[] getCaptureAsBytes() throws IOException {
+        if (this.writer != null) {
+            this.writer.close();
+        } else if (this.output != null) {
+            this.output.close();
+        }
+        return this.capture.toByteArray();
+    }
+
+    public String getCaptureAsString() throws IOException {
+        return new String(getCaptureAsBytes(), getCharacterEncoding());
     }
 
 }
