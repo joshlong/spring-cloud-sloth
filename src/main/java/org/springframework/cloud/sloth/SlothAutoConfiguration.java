@@ -1,25 +1,71 @@
-package org.springframework.cloud.sleep;
+package org.springframework.cloud.sloth;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.ResourcePatternResolver;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.*;
+import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpServletResponseWrapper;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.util.*;
+import java.util.stream.Collectors;
 
-/**
- * I'M NOT SORRY
- *
- * @author Josh Long
- */
-public class SleepFilter implements Filter {
+@Configuration
+@ConditionalOnWebApplication
+public class SlothAutoConfiguration {
 
+    @Bean
+    ImageRestController slothImages() {
+        return new ImageRestController();
+    }
 
-    private Log log = LogFactory.getLog(getClass());
+    @Bean
+    SlothFilter sloths() {
+        return new SlothFilter();
+    }
+}
+
+@RestController
+class ImageRestController {
+
+    @Autowired
+    private ResourcePatternResolver patternResolver;
+
+    @Value("${sloth.images.prefix:classpath:/static/images/*jpg}")
+    private String pattern;
+
+    private List<Map<String, String>> resolveImages(String contextPath) throws Exception {
+        Resource[] resources = patternResolver.getResources(this.pattern);
+        return Arrays.asList(resources)
+                .stream()
+                .map(resource -> "images/" + resource.getFilename())
+                .map(resourceName -> Collections.singletonMap("uri", (contextPath + '/' + resourceName).replaceAll("//", "/")))
+                .collect(Collectors.toList());
+    }
+
+    @RequestMapping(method = RequestMethod.GET,
+            produces = MediaType.APPLICATION_JSON_VALUE,
+            value = "/images.json")
+    Collection<Map<String, String>> images(HttpServletRequest request) throws Exception {
+        return this.resolveImages(request.getContextPath());
+    }
+}
+
+class SlothFilter implements Filter {
+
 
     @Override
     public void init(FilterConfig filterConfig) throws ServletException {
@@ -27,27 +73,31 @@ public class SleepFilter implements Filter {
 
 
     @Override
-    public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse,
-                         FilterChain filterChain) throws IOException, ServletException {
+    public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain)
+            throws IOException, ServletException {
 
-        HtmlResponseWrapper capturingResponseWrapper =
-                new HtmlResponseWrapper((HttpServletResponse) servletResponse);
+        HtmlResponseWrapper capturingResponseWrapper = new HtmlResponseWrapper((HttpServletResponse) servletResponse);
 
         filterChain.doFilter(servletRequest, capturingResponseWrapper);
-        if (servletResponse.getContentType() != null && servletResponse.
-                getContentType().contains("text/html")) {
+
+        if (servletResponse.getContentType() != null && servletResponse.getContentType().contains("text/html")) {
+
             String content = capturingResponseWrapper.getCaptureAsString();
-            String sleepyScript = String.format("<script src='%s'></script>",
-                    servletRequest.getServletContext().getContextPath() + "/sleepy.js");
+
+            String sleepyScript = String.format("<script src=\"%s\"></script>", servletRequest.getServletContext().getContextPath() + "/sleepy.js");
+
             String closeBodyTag = "</body>";
+
             int bodyStart = content.toLowerCase().lastIndexOf(closeBodyTag);
+
             String newHtml = content.substring(0, bodyStart)
                     + sleepyScript
                     + "</body>"
                     + content.substring(bodyStart + closeBodyTag.length());
-            log.info(newHtml);
-            servletResponse.getWriter().write(newHtml);
+
+
             servletResponse.setContentLength(newHtml.length());
+            servletResponse.getWriter().write(newHtml);
 
         } else {
             byte[] out = capturingResponseWrapper.getCaptureAsBytes();
@@ -115,38 +165,40 @@ public class SleepFilter implements Filter {
 
         @Override
         public PrintWriter getWriter() throws IOException {
-            if (output != null) {
+            if (this.output != null) {
                 throw new IllegalStateException(
                         "getOutputStream() has already been called on this response.");
             }
 
-            if (writer == null) {
-                writer = new PrintWriter(new OutputStreamWriter(capture,
-                        getCharacterEncoding()));
+            if (this.writer == null) {
+                OutputStreamWriter out = new OutputStreamWriter(this.capture, getCharacterEncoding());
+                this.writer = new PrintWriter(out);
             }
 
-            return writer;
+            return this.writer;
         }
 
         @Override
         public void flushBuffer() throws IOException {
             super.flushBuffer();
 
-            if (writer != null) {
-                writer.flush();
-            } else if (output != null) {
-                output.flush();
+            if (this.writer != null) {
+                this.writer.flush();
             }
+            else if (this.output != null) {
+                this.output.flush();
+            }
+
         }
 
         public byte[] getCaptureAsBytes() throws IOException {
-            if (writer != null) {
-                writer.close();
-            } else if (output != null) {
-                output.close();
+            if (this.writer != null) {
+                this.writer.close();
             }
-
-            return capture.toByteArray();
+            else if (this.output != null) {
+                this.output.close();
+            }
+            return this.capture.toByteArray();
         }
 
         public String getCaptureAsString() throws IOException {
