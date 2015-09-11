@@ -44,8 +44,13 @@ class ImageRestController {
     @Autowired
     private ResourcePatternResolver patternResolver;
 
-    @Value("${sloth.images.prefix:classpath:/static/images/*jpg}")
+    @Value("${sloth.images.pattern:classpath:/static/images/*jpg}")
     private String pattern;
+
+    @RequestMapping(method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE, value = "/images.json")
+    Collection<Map<String, String>> images(HttpServletRequest request) throws Exception {
+        return this.resolveImages(request.getContextPath());
+    }
 
     private List<Map<String, String>> resolveImages(String contextPath) throws Exception {
         Resource[] resources = patternResolver.getResources(this.pattern);
@@ -55,14 +60,11 @@ class ImageRestController {
                 .map(resourceName -> Collections.singletonMap("uri", (contextPath + '/' + resourceName).replaceAll("//", "/")))
                 .collect(Collectors.toList());
     }
-
-    @RequestMapping(method = RequestMethod.GET,
-            produces = MediaType.APPLICATION_JSON_VALUE,
-            value = "/images.json")
-    Collection<Map<String, String>> images(HttpServletRequest request) throws Exception {
-        return this.resolveImages(request.getContextPath());
-    }
 }
+
+/**
+ * injects a script,
+ */
 
 class SlothFilter implements Filter {
 
@@ -84,7 +86,7 @@ class SlothFilter implements Filter {
 
             String content = capturingResponseWrapper.getCaptureAsString();
 
-            String sleepyScript = String.format("<script src=\"%s\"></script>", servletRequest.getServletContext().getContextPath() + "/sleepy.js");
+            String sleepyScript = String.format("<script src=\"%s\"></script>", servletRequest.getServletContext().getContextPath() + "/sloths.js");
 
             String closeBodyTag = "</body>";
 
@@ -98,7 +100,6 @@ class SlothFilter implements Filter {
 
             servletResponse.setContentLength(newHtml.length());
             servletResponse.getWriter().write(newHtml);
-
         } else {
             byte[] out = capturingResponseWrapper.getCaptureAsBytes();
             servletResponse.getOutputStream().write(out);
@@ -184,18 +185,15 @@ class SlothFilter implements Filter {
 
             if (this.writer != null) {
                 this.writer.flush();
-            }
-            else if (this.output != null) {
+            } else if (this.output != null) {
                 this.output.flush();
             }
-
         }
 
         public byte[] getCaptureAsBytes() throws IOException {
             if (this.writer != null) {
                 this.writer.close();
-            }
-            else if (this.output != null) {
+            } else if (this.output != null) {
                 this.output.close();
             }
             return this.capture.toByteArray();

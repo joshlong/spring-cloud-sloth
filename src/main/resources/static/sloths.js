@@ -71,7 +71,6 @@ window
                             container.appendChild(imgDiv);
                         });
 
-
                         body.appendChild(container);
 
                     });
